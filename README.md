@@ -66,9 +66,14 @@ actually run:
 - **Name meetings by title, not by ID.** AlphaPai re-encrypts record IDs on
   every session, so an ID from yesterday is already dead. 「那个讲光模块的」
   works; a copied ID does not.
-- **Say if you want the transcript.** The default is the AI summary only. The
-  transcript (逐字稿) is the raw speaker-by-speaker text, a separate artifact —
-  useful when you want the actual quote rather than the summary's paraphrase.
+- **Set the vault before your first sync.** Without one, notes land in a
+  folder inside the skill itself — the run says so in `warnings`, but it is
+  easier to just run `config --set-vault` first.
+- **Say which artifacts you want.** There are four kinds: `ai_summary` (the
+  default), `transcript` (逐字稿 — raw speaker-by-speaker text, worth asking for
+  when you want the actual quote rather than the summary's paraphrase), `audio`
+  (the original recording, when the record has one), and `all` (AlphaPai's own
+  bundle).
 - **Re-running is safe.** Notes already in the vault are skipped, so 「同步一下」
   is a cheap incremental operation, not a re-download.
 - **Ask for the analysis, not just the download.** The requests that actually
@@ -86,7 +91,7 @@ One note per record, with frontmatter Obsidian can filter and query on:
 ```markdown
 ---
 title: "2024英伟达GTC大会 _ 黄仁勋Keynote演讲.mp3"
-alphapai_id: "eD0eHgjxHCG2..."
+alphapai_session_id: "eD0eHgjxHCG2..."
 created: "2024-03-01 00:00:00"
 duration: "7230"
 status: "done"
@@ -107,11 +112,45 @@ tags:
 英伟达自1993年成立以来，经历了多次重要的技术创新……
 ```
 
+`alphapai_session_id` is named for what it is: AlphaPai re-encrypts record ids
+on every session, so it identifies the fetch, not the meeting. Do not build
+dedupe or links on it — the filename and `title` are the stable handles.
+
 Headings, lists and tables survive the conversion from `.docx`. The transcript
 variant lands beside it as `<name>-transcript.md` and keeps speaker labels
-(`讲话人1：`). `--format md,docx,pdf` also gives you the original and a PDF;
+(`讲话人1：`). Long titles get squeezed to fit the path limit, but the
+`-transcript` tag is always preserved, so the two never collide. `--format md,docx,pdf` also gives you the original and a PDF;
 Markdown alone is the default because it's the version you can search, link and
 quote from.
+
+A board snapshot looks different — it is a dated table per feed, not prose:
+
+```markdown
+---
+title: "AlphaPai 机构热议"
+board: "hot_topics"
+rows: 55
+captured_at: "2026-09-22T14:10:03+08:00"
+origin: "AlphaPai 发现"
+---
+
+## 当期热议话题
+
+| group | title | code | org | time |
+| --- | --- | --- | --- | --- |
+|  | 长鑫G5平台DRAM正式宣布量产 |  |  |  |
+|  | Agent负载推动服务器CPU需求重估 |  |  |  |
+
+## 机构榜单个股（公募榜）
+
+| group | title | code | org | time |
+| --- | --- | --- | --- | --- |
+| publicList | 中际旭创 | 300308.SZ |  |  |
+```
+
+Columns are filled opportunistically: these feeds disagree about field names,
+so `title` and `code` are usually present while `org` and `time` are often
+blank. The `rows` count is distinct rows across the whole board.
 
 ---
 
@@ -182,6 +221,28 @@ yours.
 
 ---
 
+## Reading the output
+
+Every command prints JSON. The fields that matter:
+
+| Field | Means |
+| --- | --- |
+| `status` | `ok`, `partial` (something failed but the rest worked), or `failed` |
+| `warnings` | non-fatal things you should know — e.g. no vault configured |
+| `records[].kinds[<kind>].written` | the files actually written, by format |
+| `served_as` | the filename AlphaPai served, useful to confirm you got the right record |
+| `skipped: "already present"` | that note is already in the vault, so it wasn't re-downloaded |
+| `skipped: "not available for this record"` | the record has no such artifact (check `list` → `available`) |
+| `failed_artifacts` | how many downloads failed; `0` with `status: ok` means a clean run |
+| `restarts` | how many times the browser had to be rebuilt; not a failure |
+| `boards[].rows` | distinct rows captured; `0` comes with a `hint` explaining which kind of empty |
+
+If `pull` reports `records: []` with `status: ok`, nothing matched your filter —
+most often because the only records present are AlphaPai's hidden demo rows.
+Run `list --include-examples` to see everything the account actually has.
+
+---
+
 ## Things that will confuse you if nobody says them
 
 **A browser window opens when downloading. That is not a bug.** AlphaPai
@@ -199,7 +260,10 @@ real recordings.
 
 **`restarts: 1` in the output does not mean failure.** A headed browser
 occasionally dies mid-run; the tool rebuilds it and resumes the outstanding
-items. If the status says `ok`, it finished.
+items. If the status says `ok`, it finished. This is not rare — two restarts in
+a single run is normal, which is why the budget is 4 (`--max-restarts`). If it
+is exhausted, the remaining items say so explicitly and re-running picks them
+up.
 
 **An empty 分析师 board usually just means you follow no analysts.** The tool
 distinguishes the two cases and says which: the feed answered and was empty, or

@@ -108,9 +108,19 @@ usually come back empty-handed.
 often bounced back to `/login`, so every command logs in inside the same
 process that scrapes. Do not build anything on "it is already logged in".
 
-A headed Edge also dies mid-run occasionally. `pull` recovers: it rebuilds the
-browser and resumes the outstanding items, up to `--max-restarts` (default 2).
-A run that reports `restarts: 1` still completed.
+A headed Edge also dies mid-run occasionally - two restarts in one run is
+normal, not exceptional. `pull` recovers: it rebuilds the browser and resumes
+the outstanding items, up to `--max-restarts` (default 4). A run reporting
+`restarts: 2` with `status: ok` completed fine; an exhausted budget is reported
+per item.
+
+Filenames: the kind tag (`-transcript`, `-bundle`) is reserved out of the path
+budget and only the title is squeezed. Never append the tag after truncating -
+that made both artifacts resolve to one filename, and the second was skipped as
+"already present" while the run still reported `status: ok`.
+
+When no vault is configured, output falls back to a folder inside the skill.
+Commands report that in `warnings`; do not let it pass silently.
 
 ## Scheduling
 
@@ -168,4 +178,8 @@ After a change, confirm all four:
 3. `pull --include-examples --match <title>` writes a note whose **body
    matches its filename** - the row-to-menu mapping has broken this twice, and
    the failure is silent: you get a real note about the wrong meeting.
-4. `boards` returns non-zero rows for `hot_topics`.
+4. `pull --kinds ai_summary,transcript` on a **long-titled** record into a
+   **deep** output path writes *two* files, both non-empty, with the
+   `-transcript` tag intact. A bogus `skipped: "already present"` here means
+   the filename budget regressed.
+5. `boards` returns non-zero rows for `hot_topics`.

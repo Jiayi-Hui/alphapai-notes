@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ap_routes import resolve
-from ap_session import ApiRecorder, dedupe_rows, extract_rows, goto
+from ap_session import ApiRecorder, extract_rows, goto
 
 # Fields worth surfacing in a summary; boards disagree on their names, so we
 # probe a list of candidates rather than assuming one schema.
@@ -28,6 +28,64 @@ TIME_KEYS = ("publishTime", "createTime", "actualPublishTime", "updateTime",
 CODE_KEYS = ("stockCode", "code", "secCode", "symbol", "sectorCode")
 ORG_KEYS = ("institutionName", "orgName", "institution", "company",
             "brokerName", "source")
+
+# Raw API paths make terrible section headings in a note a human will read.
+DATASET_LABELS = {
+    "hot/topic/current/batch/list": "当期热议话题",
+    "hot/topic/stock/list": "机构榜单个股",
+    "hot/topic/report/latest": "最新热议研报",
+    "report/hot/recommend": "推荐研报",
+    "roadshow/summary/hot/recommend": "推荐路演纪要",
+    "stock/hot/recommend": "推荐个股",
+    "analyst/information/list": "分析师信息流",
+    "stock/follow/query": "自选股",
+    "stock/information/list": "自选股资讯",
+    "stock/follow/group": "自选分组",
+    "sector/prosperity/list": "板块景气",
+    "sector/market/performance": "板块表现",
+    "sector/chain/top/list": "产业链龙头",
+}
+
+
+def dataset_label(key: str) -> str:
+    """Turn a dataset key (an API path, optionally `@tab`) into a heading."""
+    base, _, tab = key.partition("@")
+    label = next((v for k, v in DATASET_LABELS.items() if k in base), None)
+    if label is None:
+        label = base.rstrip("/").split("/")[-1] or base
+    return f"{label}（{tab}）" if tab else label
+
+
+def row_signature(row: dict) -> tuple:
+    """Identity of a board row for de-duplication.
+
+    Not the `id` field: like 转记 record ids, these are re-encrypted per
+    request, so the same topic fetched twice carries two different ids and an
+    id-based dedupe silently keeps both. Content is the only stable handle.
+    """
+    for key in ("topicName", "title", "name", "reportTitle", "stockName",
+                "secName", "sectorName"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return ("text", value.strip())
+    for key in ("stockCode", "code", "secCode", "symbol"):
+        value = row.get(key)
+        if value:
+            return ("code", str(value))
+    return ("blob", repr(sorted((k, str(v)[:30]) for k, v in row.items()
+                                if k != "_group")))
+
+
+def dedupe_by_content(rows: list[dict]) -> list[dict]:
+    seen: set = set()
+    out: list[dict] = []
+    for row in rows:
+        sig = row_signature(row)
+        if sig in seen:
+            continue
+        seen.add(sig)
+        out.append(row)
+    return out
 
 
 @dataclass(frozen=True)
@@ -136,8 +194,20 @@ def capture_board(page, cfg, board: Board, include_tabs: bool = True,
                 page.wait_for_timeout(1000)
             harvest(tab)
 
-    datasets = {k: dedupe_rows(v) for k, v in groups.items()}
-    total = sum(len(v) for v in datasets.values())
+    datasets = {k: dedupe_by_content(v) for k, v in groups.items()}
+
+    # Clicking a tab often re-issues the same request, producing a `needle@tab`
+    # dataset identical to the default one. Keeping it listed the same topics
+    # twice in the note, so drop any tab capture that adds nothing.
+    for key in list(datasets):
+        base, sep, _tab = key.partition("@")
+        if not sep or base not in datasets:
+            continue
+        base_sigs = {row_signature(r) for r in datasets[base]}
+        if {row_signature(r) for r in datasets[key]} <= base_sigs:
+            del datasets[key]
+
+    total = len(dedupe_by_content([r for rows in datasets.values() for r in rows]))
     result = {
         "board": board.key,
         "label": board.label,
@@ -145,6 +215,7 @@ def capture_board(page, cfg, board: Board, include_tabs: bool = True,
         "path": path,
         "note": board.note,
         "found": total,
+        "rows_per_dataset": {k: len(v) for k, v in datasets.items()},
         "datasets": datasets,
     }
     if total == 0:

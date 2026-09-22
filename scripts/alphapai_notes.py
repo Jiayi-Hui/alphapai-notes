@@ -32,9 +32,11 @@ import ap_auth  # noqa: E402
 from ap_config import Config, guess_vaults  # noqa: E402
 from ap_convert import (KINDS, Note, artifact_extension, fetch_artifact,  # noqa: E402
                         list_notes, safe_filename)
-from ap_discover import BOARDS, capture_board, resolve_boards, summarize_rows  # noqa: E402
-from ap_export import (ExportError, build_note, docx_to_markdown,  # noqa: E402
-                       docx_to_pdf, fit_path, write_artifact, write_text)
+from ap_discover import (BOARDS, capture_board, dataset_label,  # noqa: E402
+                         resolve_boards, summarize_rows)
+from ap_export import (MAX_PATH, ExportError, build_note,  # noqa: E402
+                       docx_to_markdown, docx_to_pdf, fit_path,
+                       write_artifact, write_text)
 from ap_routes import RouteError, SECTIONS, resolve, resolve_all  # noqa: E402
 from ap_schedule import ScheduleError, build_plan, install, remove, status  # noqa: E402
 from ap_session import SessionError, session  # noqa: E402
@@ -60,6 +62,19 @@ def make_logger(quiet: bool):
         if not quiet:
             print(message, file=sys.stderr)
     return log
+
+
+def _vault_warning(cfg: "Config", out_override) -> str | None:
+    """Flag the silent fallback: no vault means notes land in the skill folder.
+
+    Documented as "everything lands in your vault", so a run that quietly
+    writes somewhere else has to say so.
+    """
+    if out_override or cfg.vault_path:
+        return None
+    return (f"no Obsidian vault configured, so notes are being written to "
+            f"{cfg.output_dir()} (inside the skill folder). Set one with: "
+            "config --set-vault <path>")
 
 
 def _split(value: str | None) -> list[str]:
@@ -173,6 +188,7 @@ def cmd_list(args) -> int:
         cfg.save()
     selected = _select_notes(notes, cfg, args)
     emit({"status": "ok", "login": state,
+          "warnings": [w for w in [_vault_warning(cfg, None)] if w],
           "total_seen": len(notes), "selected": len(selected),
           "examples_hidden": len(notes) - len(selected) if not args.include_examples else 0,
           "notes": [n.summary() for n in selected]})
@@ -183,20 +199,38 @@ def cmd_list(args) -> int:
 # pull
 # ---------------------------------------------------------------------------
 
-def _note_stem(note: Note, kind: str) -> str:
+# The tag that distinguishes one record's artifacts from each other.
+KIND_TAG = {"transcript": "-transcript", "all": "-bundle"}
+
+
+def _note_stem(note: Note, kind: str, out_dir: Path | None = None,
+               suffix: str = ".md") -> str:
+    """Build the filename stem, shortening the TITLE and never the kind tag.
+
+    This used to append the tag after truncating, which silently destroyed
+    data: with a long title the whole `-transcript` suffix was cut off, so the
+    summary and the transcript resolved to the same filename, and the second
+    one was skipped as "already present" while the run still reported
+    `status: ok` and `failed_artifacts: 0`. The tag and the date are therefore
+    reserved out of the budget, and only the title is squeezed.
+    """
     date = (note.created or "")[:10].replace("/", "-") or "undated"
-    stem = f"{date}-{safe_filename(note.title)}"
-    if kind == "transcript":
-        stem += "-transcript"
-    elif kind == "all":
-        stem += "-bundle"
-    return stem
+    tag = KIND_TAG.get(kind, "")
+    title = safe_filename(note.title)
+    if out_dir is not None:
+        fixed = len(str(out_dir)) + 1 + len(date) + 1 + len(tag) + len(suffix)
+        budget = MAX_PATH - fixed
+        if budget < len(title):
+            title = title[:max(8, budget)].rstrip(" ._-")
+    return f"{date}-{title}{tag}"
 
 
 def _note_meta(note: Note, kind: str) -> dict:
     return {
         "title": note.title,
-        "alphapai_id": note.id,
+        # Named for what it is: AlphaPai re-encrypts record ids every session,
+        # so this is a one-shot handle, not a stable key to dedupe or link on.
+        "alphapai_session_id": note.id,
         "created": note.created,
         "duration": note.duration,
         "status": note.status,
@@ -209,7 +243,7 @@ def _note_meta(note: Note, kind: str) -> dict:
 
 def _export_one(note: Note, kind: str, blob: bytes, out_dir: Path,
                 formats: list[str], log) -> dict:
-    stem = _note_stem(note, kind)
+    stem = _note_stem(note, kind, out_dir)
     suffix = artifact_extension(kind, blob)
     written: dict[str, str] = {}
     warnings: list[str] = []
@@ -323,7 +357,7 @@ def cmd_pull(args) -> int:
                 if kind != "all" and kind not in note.available():
                     entry["kinds"][kind] = {"skipped": "not available for this record"}
                     continue
-                stem = _note_stem(note, kind)
+                stem = _note_stem(note, kind, out_dir)
                 if args.skip_existing and fit_path(out_dir, stem, ".md").exists():
                     entry["kinds"][kind] = {"skipped": "already present"}
                     continue
@@ -362,7 +396,9 @@ def cmd_pull(args) -> int:
             for title, kind in outstanding:
                 by_title.setdefault(title, {"title": title, "kinds": {}})
                 by_title[title]["kinds"][kind] = {
-                    "error": "browser kept ending before this item completed"}
+                    "error": (f"gave up after {args.max_restarts} browser "
+                              "restarts; raise --max-restarts and re-run to "
+                              "finish the remaining items")}
             break
         log(f"pull: restarting browser ({restarts}/{args.max_restarts})")
 
@@ -370,6 +406,7 @@ def cmd_pull(args) -> int:
     failures = sum(1 for r in results for v in r["kinds"].values() if "error" in v)
     payload = {"status": "ok" if not failures else "partial",
                "login": state, "output_dir": str(out_dir),
+               "warnings": [w for w in [_vault_warning(cfg, args.out)] if w],
                "formats": formats, "kinds": kinds, "restarts": restarts,
                "records": results, "boards": boards_result,
                "failed_artifacts": failures}
@@ -392,7 +429,9 @@ def _board_markdown(captured: dict) -> str:
     }
     lines = []
     for dataset, rows in captured["datasets"].items():
-        lines.append(f"## {dataset}")
+        lines.append(f"## {dataset_label(dataset)}")
+        lines.append("")
+        lines.append(f"<!-- source: {dataset} -->")
         lines.append("")
         rows_summary = summarize_rows(rows)
         if not rows_summary:
@@ -453,7 +492,9 @@ def cmd_boards(args) -> int:
         cfg.save()
     empty = [b["board"] for b in out if not b.get("rows")]
     emit({"status": "ok" if not empty else "partial", "login": state,
-          "output_dir": str(out_dir), "boards": out, "empty": empty})
+          "output_dir": str(out_dir),
+          "warnings": [w for w in [_vault_warning(cfg, args.out)] if w],
+          "boards": out, "empty": empty})
     return 0 if not empty else 2
 
 
@@ -648,9 +689,9 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--limit", type=int)
     pl.add_argument("--timeout", type=int, default=60,
                     help="seconds to wait per artifact (default 60)")
-    pl.add_argument("--max-restarts", type=int, default=2,
-                    help="how many times to rebuild the browser if it "
-                         "dies mid-run (default 2)")
+    pl.add_argument("--max-restarts", type=int, default=4,
+                    help="how many times to rebuild the browser if it dies "
+                         "mid-run (default 4; runs routinely need 2)")
     pl.add_argument("--include-examples", action="store_true")
     pl.add_argument("--headless", action="store_true",
                     help="force a headless browser; AlphaPai downloads "
