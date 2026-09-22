@@ -151,9 +151,15 @@ origin: "AlphaPai 发现"
 | publicList | 中际旭创 | 300308.SZ |  |  |
 ```
 
-Columns are filled opportunistically: these feeds disagree about field names,
-so `title` and `code` are usually present while `org` and `time` are often
-blank. The `rows` count is distinct rows across the whole board.
+Each feed is rendered for what it actually carries, not through one generic
+table: hot topics keep their full ~400-character summary and the related
+stocks with day moves, roadshows keep their digest and guest list, sector rows
+keep the catalyst event. Columns a feed never populates are dropped rather than
+printed as a column of dashes.
+
+A `.json` sidecar is written next to every board note by default. The markdown
+is a readable view; the JSON is the complete captured rows, and a past day
+cannot be re-scraped. Use `--no-json` if you only want the note.
 
 ---
 

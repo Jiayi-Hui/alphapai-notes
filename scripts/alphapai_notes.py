@@ -37,6 +37,7 @@ from ap_discover import (BOARDS, capture_board, dataset_label,  # noqa: E402
 from ap_export import (MAX_PATH, ExportError, build_note,  # noqa: E402
                        docx_to_markdown, docx_to_pdf, fit_path,
                        write_artifact, write_text)
+from ap_render import render_dataset  # noqa: E402
 from ap_routes import RouteError, SECTIONS, resolve, resolve_all  # noqa: E402
 from ap_schedule import ScheduleError, build_plan, install, remove, status  # noqa: E402
 from ap_session import SessionError, session  # noqa: E402
@@ -475,19 +476,12 @@ def _board_markdown(captured: dict) -> str:
     for dataset, rows in captured["datasets"].items():
         lines.append(f"## {dataset_label(dataset)}")
         lines.append("")
-        lines.append(f"<!-- source: {dataset} -->")
+        lines.append(f"<!-- source: {dataset} · {len(rows)} rows -->")
         lines.append("")
-        rows_summary = summarize_rows(rows)
-        if not rows_summary:
+        if not rows:
             lines.extend(["_no rows_", ""])
             continue
-        cols = ("group", "title", "code", "org", "time")
-        lines.append("| " + " | ".join(cols) + " |")
-        lines.append("| " + " | ".join(["---"] * len(cols)) + " |")
-        for r in rows_summary:
-            cells = [str(r.get(k) or "").replace("|", "\\|") for k in cols]
-            lines.append("| " + " | ".join(cells) + " |")
-        lines.append("")
+        lines.extend(render_dataset(dataset, rows))
     return build_note(meta, "\n".join(lines),
                       tags=["alphapai", "discover", captured["board"]])
 
@@ -499,7 +493,7 @@ def _write_board(captured: dict, out_dir: Path, args) -> dict:
     written = {}
     if captured["found"]:
         written["md"] = str(write_text(target, stem, _board_markdown(captured)))
-        if args.raw_json:
+        if not getattr(args, "no_json", False):
             written["json"] = str(write_text(
                 target, stem,
                 json.dumps(captured["datasets"], ensure_ascii=False, indent=1),
@@ -750,14 +744,16 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--with-boards", action="store_true",
                     help="also capture the discovery boards")
     pl.add_argument("--boards", help="which boards, when --with-boards is set")
-    pl.add_argument("--raw-json", action="store_true",
-                    help="also write each board's raw rows as JSON")
+    pl.add_argument("--no-json", action="store_true",
+                    help="skip the raw JSON sidecar for boards")
     pl.set_defaults(func=cmd_pull)
 
     bd = add("boards", help="capture discovery board lists")
     bd.add_argument("--board", help=f"comma separated: {','.join(sorted(BOARDS))}")
     bd.add_argument("--out", help="output directory (overrides the vault)")
-    bd.add_argument("--raw-json", action="store_true")
+    bd.add_argument("--no-json", action="store_true",
+                    help="skip the raw JSON sidecar (kept by default: the "
+                         "markdown is a lossy view and a past day cannot be re-scraped)")
     bd.add_argument("--preview", action="store_true",
                     help="include a few sample rows in the result")
     bd.set_defaults(func=cmd_boards)

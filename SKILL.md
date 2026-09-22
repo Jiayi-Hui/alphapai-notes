@@ -186,8 +186,13 @@ making a call.
 ## Boundaries
 
 - Read-only. It never uploads, renames, shares, syncs to PaiWork or deletes.
-- Board captures take list metadata (title, code, org, time) - not article or
-  report full text.
+- Board captures take what the feed returns in its list response - including
+  the summary text it carries (hot topics ~400 chars, roadshow digests, sector
+  catalyst events). They do not open individual items to fetch full article or
+  report bodies.
+- Every board writes a `.json` sidecar by default; markdown is the lossy view.
+  Rendering is per-dataset (`ap_render.py`) because one generic table dropped
+  exactly the fields worth having.
 - A board reporting `rows: 0` says which case it is: the feed answered and was
   empty, or its endpoint was never called (a route change).
 - Captured notes are personal meeting content. Keep them in the vault; do not
