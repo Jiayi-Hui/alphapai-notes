@@ -48,6 +48,28 @@ shortcuts were tried and both correctly fail: requesting the storage URL
 directly returns 401, and fetching it from page context is blocked by CORS.
 The supported path is to let the app fetch its own file.
 
+## When someone asks what this can do
+
+Answer from the machine's actual state, not from this file. Run `doctor` (and
+`list` when the browser is warranted) first, then say:
+
+- the three things it does, in their terms - meeting notes into their vault,
+  daily institutional boards, and chaining either into follow-on analysis, with
+  an example sentence they could say for each;
+- what is true **here**: is it configured, where is the vault, how many records
+  does the account actually hold. "Your account currently has only AlphaPai's
+  two demo records" is far more useful than a feature list, and prevents the
+  confusion of a successful `pull` that writes nothing;
+- the boundaries, stated plainly: read-only (never uploads, deletes, shares or
+  edits), boards capture the summary the feed carries rather than opening each
+  item for full text, SMS/QR login is out of scope, and the password lives in
+  the OS keystore where the agent cannot read it;
+- one concrete first step, preferring one that produces real output - the
+  boards have live data even when the account has no recordings yet.
+
+Do not recite the command table. The person asked what you can do for them, not
+what flags exist.
+
 ## First run is a conversation, not a command list
 
 On a machine that has never run this, **start with `doctor`** and work through
