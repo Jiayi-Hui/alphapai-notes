@@ -65,16 +65,15 @@ def capture_command(kinds: list[str], formats: list[str],
                     include_boards: bool, offscreen: bool = True) -> list[str]:
     """The command the scheduler will run.
 
-    `--offscreen` is on by default: downloads need a headed browser, and a
-    window appearing over the user's work every morning is not acceptable for
-    an unattended job.
+    `pull` already parks its window off-screen, which is what makes an
+    unattended job acceptable - a window appearing over the user's work every
+    morning is not.
     """
     cmd = [sys.executable, str(cli_path()), "pull",
            "--kinds", ",".join(kinds),
            "--format", ",".join(formats),
            "--quiet"]
-    if offscreen:
-        cmd.append("--offscreen")
+    # pull parks the window off-screen by default; nothing to pass
     if include_boards:
         cmd.append("--with-boards")
     return cmd

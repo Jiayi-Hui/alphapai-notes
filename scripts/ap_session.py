@@ -74,9 +74,7 @@ def session(headless: bool = True, timeout_ms: int = DEFAULT_TIMEOUT_MS,
         "--disable-features=msDownloadsHub,DownloadBubble,DownloadBubbleV2",
     ]
     if offscreen and not headless:
-        # Far-negative coordinates make Edge exit during startup ("target
-        # closed"), so nudge the window mostly below the desktop instead.
-        args.append("--window-position=0,2000")
+        args.append(offscreen_position())
 
     with sync_playwright() as pw:
         ctx = _launch_with_retry(pw, pdir, headless, viewport, args)
@@ -141,6 +139,35 @@ def _launch_with_retry(pw, pdir: Path, headless: bool,
         "seconds and retry, or close any leftover Edge process using "
         f"{pdir}."
     )
+
+
+def offscreen_position() -> str:
+    """A window position below every monitor, so the browser never shows up.
+
+    Two constraints learned the hard way:
+      * far-negative coordinates make Edge exit during startup, surfacing later
+        as "target closed" mid-scrape - so the window goes *below* the desktop,
+        not above-left of it;
+      * a fixed offset like y=2000 is not reliably off-screen on a tall or
+        stacked multi-monitor layout, which is how the window ended up visible
+        at the top of the screen.
+
+    So the bottom edge of the virtual desktop is measured and the window is
+    placed past it.
+    """
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        user32.SetProcessDPIAware()
+        SM_YVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 77, 79
+        top = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+        height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+        if height > 0:
+            return f"--window-position=0,{top + height + 100}"
+    except Exception:
+        pass
+    return "--window-position=0,3000"
 
 
 class ApiRecorder:

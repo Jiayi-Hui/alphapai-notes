@@ -60,6 +60,7 @@ actually run:
 | All the discovery boards | 「发现页那几个板块都抓一份」 | `boards` |
 | Automate it | 「每天早上八点半自动同步到 Obsidian」 | `schedule install --apply` |
 | Check it still works | 「AlphaPai 抓取还正常吗」 | `probe` |
+| Something is not set up | 「这台机器上还缺什么」 | `doctor` |
 | It stopped finding pages | 「页面好像改版了,重新找一下路由」 | `probe` (re-discovers, then caches) |
 
 ### What makes a good request here
@@ -172,6 +173,17 @@ pip install playwright python-docx
 python -m playwright install          # uses your installed Edge, not a bundled browser
 ```
 
+At any point, ask the skill what is still missing:
+
+```bash
+python scripts/alphapai_notes.py doctor
+```
+
+It checks Python, playwright, python-docx, Edge, your credential, the vault,
+whether notes are exposed to git, and whether the output directory is
+writable — and prints the fix for anything that fails. `blocking` lists what
+stops a run; `advisory` lists what merely makes it less useful.
+
 Store your AlphaPai login. This opens a separate window — you type it there,
 and it goes straight into the OS keystore:
 
@@ -266,13 +278,15 @@ Run `list --include-examples` to see everything the account actually has.
 
 ## Things that will confuse you if nobody says them
 
-**A browser window opens when downloading. That is not a bug.** AlphaPai
+**A browser runs during downloads, but you should never see it.** AlphaPai
 delivers files by navigating to its object store, and a headless browser
 silently drops that download — verified, along with both obvious workarounds:
 requesting the storage URL directly returns 401, and fetching it from page
-context is blocked by CORS. So downloads run headed. `--offscreen` (which
-scheduled runs use by default) parks the window below the desktop where you
-won't see it. Listing and boards are headless and invisible.
+context is blocked by CORS. So downloads need a real window. It is parked past
+the bottom edge of your desktop (measured from the virtual screen, so it works
+on tall and multi-monitor setups), which is why nothing pops up in front of
+your work. Pass `--visible` when you want to watch it. Listing and boards are
+headless and invisible anyway.
 
 **A fresh account shows two demo records.** AlphaPai seeds every account with
 样例 rows about GTC and GPT-o1. They're hidden by default; `--include-examples`

@@ -121,12 +121,13 @@ test a fresh install.
 
 ## Two constraints worth knowing
 
-**Downloads need a headed browser.** The app delivers a file by navigating to
-its object store, and headless Edge silently drops that download. `pull`
-therefore runs headed by default; `--offscreen` parks the window below the
-desktop for unattended runs. `list` and `boards` work fine headless because
-they only read API responses. `--headless` is available for `pull` but will
-usually come back empty-handed.
+**Downloads need a headed browser, parked off-screen.** The app delivers a
+file by navigating to its object store, and headless Edge silently drops that
+download. `pull` therefore runs headed, with the window positioned past the
+bottom of the virtual desktop so it never appears over the user's work - a
+fixed offset was not enough on a tall/multi-monitor layout, so it is measured.
+`--visible` shows it; `--headless` exists but usually returns nothing. `list`
+and `boards` are headless already.
 
 **Sessions are short-lived.** A profile that authenticated minutes ago is
 often bounced back to `/login`, so every command logs in inside the same
@@ -207,6 +208,7 @@ making a call.
 
 After a change, confirm all four:
 
+0. `doctor` reports no blocking items on a fresh machine.
 1. `probe` resolves every section.
 2. `list` returns records with sensible `available` kinds.
 3. `pull --include-examples --match <title>` writes a note whose **body

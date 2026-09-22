@@ -2,6 +2,7 @@
 """alphapai-notes - capture AlphaPai notes into an Obsidian vault.
 
 Commands
+    doctor     check every prerequisite for a first run
     auth       inspect or exercise login (credential stays in the keystore)
     config     inspect or set the vault, formats and kinds
     probe      log in and verify every view still resolves
@@ -351,7 +352,9 @@ def cmd_pull(args) -> int:
     # them), so pull runs headed by default and parks the window off-screen
     # unless the user asked to watch it.
     headless = bool(args.headless)
-    offscreen = bool(getattr(args, "offscreen", False)) and not headless
+    # Downloads need a headed browser, but a window jumping to the front of the
+    # screen every run is intrusive - so it is parked off-screen unless asked for.
+    offscreen = not headless and not getattr(args, "visible", False)
     if headless:
         log("pull: --headless requested; note that AlphaPai downloads usually "
             "do not arrive without a headed browser")
@@ -574,6 +577,115 @@ def cmd_schedule(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# doctor
+# ---------------------------------------------------------------------------
+
+def _check_edge() -> tuple[bool, str]:
+    import platform as _platform
+    import shutil as _shutil
+
+    system = _platform.system()
+    if system == "Windows":
+        candidates = [
+            Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"))
+            / "Microsoft/Edge/Application/msedge.exe",
+            Path(os.environ.get("PROGRAMFILES", r"C:\Program Files"))
+            / "Microsoft/Edge/Application/msedge.exe",
+        ]
+        for c in candidates:
+            if c.exists():
+                return True, str(c)
+        return False, "install Microsoft Edge (this skill drives the installed Edge)"
+    if system == "Darwin":
+        app = Path("/Applications/Microsoft Edge.app")
+        if app.exists():
+            return True, str(app)
+        return False, "install Microsoft Edge"
+    found = _shutil.which("microsoft-edge") or _shutil.which("msedge")
+    return (bool(found), found or "install Microsoft Edge")
+
+
+def cmd_doctor(args) -> int:
+    """Check every prerequisite, so a new user learns what is missing at once.
+
+    Written because "can someone else actually run this?" is not answerable by
+    reading the README - the answer depends on their machine.
+    """
+    import platform as _platform
+
+    cfg = Config.load()
+    checks: list[dict] = []
+
+    def add(name, ok, detail, fix=None, blocking=True):
+        item = {"check": name, "ok": bool(ok), "detail": detail}
+        if not ok and fix:
+            item["fix"] = fix
+        if not ok:
+            item["blocking"] = blocking
+        checks.append(item)
+
+    version = ".".join(str(x) for x in sys.version_info[:3])
+    add("python", sys.version_info >= (3, 10), version,
+        "Python 3.10+ is required (the code uses modern typing syntax)")
+
+    try:
+        import playwright  # noqa: F401
+        add("playwright", True, "installed")
+    except ImportError:
+        add("playwright", False, "missing", "pip install playwright")
+
+    try:
+        import docx  # noqa: F401
+        add("python-docx", True, "installed")
+    except ImportError:
+        add("python-docx", False, "missing",
+            "pip install python-docx (needed for markdown export)")
+
+    ok, detail = _check_edge()
+    add("microsoft edge", ok, detail if ok else "not found", detail)
+
+    cred = ap_auth.credential_target()
+    add("credential", cred["configured"],
+        f"{cred['credential_source']} ({cred['store']})",
+        _credential_setup_hint().get("recommended"))
+
+    vault = cfg.vault_path
+    add("vault", bool(vault), str(vault) if vault else f"unset -> {cfg.output_dir()}",
+        "ask the user for their vault, then `config --set-vault \"<path>\"`",
+        blocking=False)
+
+    exposure = cfg.git_exposure()
+    add("notes kept out of git", exposure is None,
+        "ok" if exposure is None else f"exposed in {exposure['repository']}",
+        exposure["fix"] if exposure else None, blocking=False)
+
+    out = cfg.output_dir()
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        probe = out / ".write-probe"
+        probe.write_text("x", encoding="utf-8")
+        probe.unlink()
+        add("output writable", True, str(out))
+    except OSError as exc:
+        add("output writable", False, f"{out}: {exc}", "choose a writable vault")
+
+    routes = cfg.data.get("routes") or {}
+    add("routes cached", bool(routes),
+        f"{len(routes)} cached" if routes else "none yet (run `probe`)",
+        "run `probe` once to discover and cache them", blocking=False)
+
+    blocking = [c["check"] for c in checks if not c["ok"] and c.get("blocking")]
+    advisory = [c["check"] for c in checks if not c["ok"] and not c.get("blocking")]
+    emit({"status": "ok" if not blocking else "not_ready",
+          "platform": f"{_platform.system()} {_platform.release()}",
+          "checks": checks,
+          "blocking": blocking, "advisory": advisory,
+          "next": ("run `probe`, then `list`" if not blocking
+                   else "fix the blocking items above, then run `doctor` again")})
+    return 0 if not blocking else 2
+
+
+# ---------------------------------------------------------------------------
 # auth
 # ---------------------------------------------------------------------------
 
@@ -735,9 +847,9 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--headless", action="store_true",
                     help="force a headless browser; AlphaPai downloads "
                          "generally fail this way (default: headed)")
-    pl.add_argument("--offscreen", action="store_true",
-                    help="push the headed window below the desktop so it does "
-                         "not interrupt you (useful for scheduled runs)")
+    pl.add_argument("--visible", action="store_true",
+                    help="show the browser window instead of parking it "
+                         "off-screen (for watching what it does)")
     pl.add_argument("--no-skip-existing", dest="skip_existing",
                     action="store_false", default=True,
                     help="re-download notes already in the vault")
@@ -772,6 +884,9 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--apply", action="store_true",
                     help="actually write the schedule (otherwise dry run)")
     sc.set_defaults(func=cmd_schedule)
+
+    dr = add("doctor", help="check every prerequisite for a first run")
+    dr.set_defaults(func=cmd_doctor)
 
     au = add("auth", help="inspect or exercise AlphaPai login")
     au.add_argument("action",
