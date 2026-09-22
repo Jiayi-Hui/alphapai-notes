@@ -180,13 +180,25 @@ security add-generic-password -s 'AlphaPai:Login' -a '<your account>' -w
 python scripts/alphapai_notes.py auth status
 ```
 
-Point it at your vault (it can go looking for one):
+Then point it at your vault — and for this part, just tell the agent:
+
+> 「帮我把 AlphaPai 的笔记配到我的 Obsidian vault」
+
+It will look for your vaults, show you what it found, and ask which one you
+want — you paste a path or pick one, and it sets it for you. A vault path is
+not a secret, so there is no reason to make you type a command for it.
+
+If you would rather do it yourself:
 
 ```bash
 python scripts/alphapai_notes.py config --detect-vaults
 python scripts/alphapai_notes.py config --set-vault "D:/Obsidian/MyVault" --set-subdir AlphaPai
 python scripts/alphapai_notes.py probe
 ```
+
+Note the asymmetry with the credential above: the password you type into your
+own window because an agent must never handle it; the vault path you just say
+in chat, because it is ordinary configuration.
 
 ### Can I just put my login in a `.env`?
 
@@ -319,7 +331,11 @@ Read-only. It never uploads, renames, shares, syncs to PaiWork or deletes
 anything on AlphaPai. Board captures take list metadata, not article full text.
 
 Your captured notes are personal meeting content: they belong in your vault,
-not in a git repository. The `.gitignore` here already excludes them.
+not in a git repository. This repo's own `.gitignore` excludes them — but a
+vault is often itself a repo, so the skill checks: if notes are landing inside
+a git repository that does not ignore them, every run says so and tells you the
+one line to add. Do not ignore that warning; meeting content in a pushed repo
+is hard to take back.
 
 ---
 

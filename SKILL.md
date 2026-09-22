@@ -48,6 +48,30 @@ shortcuts were tried and both correctly fail: requesting the storage URL
 directly returns 401, and fetching it from page context is blocked by CORS.
 The supported path is to let the app fetch its own file.
 
+## First run is a conversation, not a command list
+
+When something is unconfigured, **collect it by talking to the user** and run
+the command for them. Do not paste CLI instructions and wait.
+
+For the vault, in order:
+
+1. Run `config --detect-vaults` yourself.
+2. Show the candidates and ask which one they want, or invite them to paste a
+   path. Their working directory and its parents are checked first, so the
+   vault they are standing in usually appears at the top.
+3. Run `config --set-vault "<their answer>" --set-subdir AlphaPai` for them.
+4. Confirm with `config` and tell them where notes will now land.
+
+A `warnings` entry saying no vault is configured is a cue to start that
+conversation, not something to relay verbatim.
+
+The credential is the one deliberate exception. A vault path is not a secret
+and belongs in chat; a password is, and must never be typed to an agent or
+passed as an argument. For that one, point the user at
+`Open-AlphaPaiCredentialPrompt.ps1` and let them type it into their own
+window. The asymmetry is the point: ask for what is safe to ask for, and hand
+off only what is not.
+
 ## Setup
 
 ```bash
@@ -167,7 +191,12 @@ making a call.
 - A board reporting `rows: 0` says which case it is: the feed answered and was
   empty, or its endpoint was never called (a route change).
 - Captured notes are personal meeting content. Keep them in the vault; do not
-  commit them to a repository.
+  commit them to a repository. `config.git_exposure()` checks whether the
+  output directory sits in a git repo that does not ignore it, and every
+  command surfaces that in `warnings` - act on it rather than relaying it.
+  Check with a concrete sample path, never a bare directory: `git check-ignore`
+  on a directory can match a blank .gitignore line and report "ignored" when
+  nothing is.
 
 ## Verification
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -133,6 +134,43 @@ class Config:
     def forget_route(self, section: str) -> None:
         (self.data.get("routes") or {}).pop(section, None)
 
+    # ---------- git exposure ----------
+
+    def git_exposure(self) -> dict | None:
+        """Warn if captured notes would be committed to a git repository.
+
+        A vault is often itself a repo (or sits inside one), and meeting notes
+        are personal content that should not be pushed. Checked against a
+        concrete sample path rather than the directory: `git check-ignore` on a
+        bare directory can report a match against a blank .gitignore line,
+        which reads as "ignored" when nothing of the sort is true.
+        """
+        base = self.vault_path
+        if not base or not base.exists():
+            return None
+        try:
+            root = subprocess.run(
+                ["git", "-C", str(base), "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True, timeout=15)
+            if root.returncode != 0:
+                return None
+            repo = (root.stdout or "").strip()
+            if not repo:
+                return None
+            sample = self.output_dir() / "sample-note.md"
+            ignored = subprocess.run(
+                ["git", "-C", repo, "check-ignore", "-q", str(sample)],
+                capture_output=True, text=True, timeout=15)
+            if ignored.returncode == 0:
+                return None
+            subdir = self.data.get("notes_subdir") or "AlphaPai"
+            return {
+                "repository": repo,
+                "fix": f"add `{subdir}/` to {repo}/.gitignore",
+            }
+        except (OSError, subprocess.SubprocessError):
+            return None
+
     # ---------- reporting ----------
 
     def describe(self) -> dict:
@@ -150,6 +188,7 @@ class Config:
             "skip_examples": self.data.get("skip_examples"),
             "boards": self.data.get("boards"),
             "cached_routes": self.data.get("routes"),
+            "git_exposure": self.git_exposure(),
         }
 
 

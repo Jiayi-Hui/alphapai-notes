@@ -86,6 +86,16 @@ def _empty_hint(notes: list, selected: list, args) -> str | None:
     return None
 
 
+def _git_warning(cfg: "Config") -> str | None:
+    """Captured notes are personal content; committing them is the real risk."""
+    exposure = cfg.git_exposure()
+    if not exposure:
+        return None
+    return (f"notes are being written inside the git repository "
+            f"{exposure['repository']} and are NOT ignored - meeting content "
+            f"could be committed. Fix: {exposure['fix']}")
+
+
 def _vault_warning(cfg: "Config", out_override) -> str | None:
     """Flag the silent fallback: no vault means notes land outside one.
 
@@ -95,7 +105,9 @@ def _vault_warning(cfg: "Config", out_override) -> str | None:
     if out_override or cfg.vault_path:
         return None
     return (f"no Obsidian vault configured, so notes are being written to "
-            f"{cfg.output_dir()}. Set one with: config --set-vault <path>")
+            f"{cfg.output_dir()}. Ask the user which vault to use "
+            "(`config --detect-vaults` lists candidates), then set it for them "
+            "with `config --set-vault \"<path>\"`.")
 
 
 def _split(value: str | None) -> list[str]:
@@ -124,6 +136,11 @@ def cmd_config(args) -> int:
             emit({"status": "failed", "error": str(exc)})
             return 2
         changed = True
+        exposure = cfg.git_exposure()
+        if exposure:
+            print(f"warning: {resolved} is inside the git repository "
+                  f"{exposure['repository']} and captured notes are not "
+                  f"ignored. {exposure['fix']}", file=sys.stderr)
         if not cfg.vault_looks_real():
             print(f"note: {resolved} has no .obsidian/ folder - it will still "
                   "be used, but confirm it is the vault root",
@@ -209,7 +226,7 @@ def cmd_list(args) -> int:
         cfg.save()
     selected = _select_notes(notes, cfg, args)
     emit({"status": "ok", "login": state,
-          "warnings": [w for w in [_vault_warning(cfg, None),
+          "warnings": [w for w in [_vault_warning(cfg, None), _git_warning(cfg),
                                    _empty_hint(notes, selected, args)] if w],
           "total_seen": len(notes), "selected": len(selected),
           "examples_hidden": len(notes) - len(selected) if not args.include_examples else 0,
@@ -432,8 +449,8 @@ def cmd_pull(args) -> int:
     failures = sum(1 for r in results for v in r["kinds"].values() if "error" in v)
     payload = {"status": "ok" if not failures else "partial",
                "login": state, "output_dir": str(out_dir),
-               "warnings": [w for w in [_vault_warning(cfg, args.out)] if w]
-                           + extra_warnings,
+               "warnings": [w for w in [_vault_warning(cfg, args.out),
+                                        _git_warning(cfg)] if w] + extra_warnings,
                "formats": formats, "kinds": kinds, "restarts": restarts,
                "records": results, "boards": boards_result,
                "failed_artifacts": failures}
@@ -520,7 +537,8 @@ def cmd_boards(args) -> int:
     empty = [b["board"] for b in out if not b.get("rows")]
     emit({"status": "ok" if not empty else "partial", "login": state,
           "output_dir": str(out_dir),
-          "warnings": [w for w in [_vault_warning(cfg, args.out)] if w],
+          "warnings": [w for w in [_vault_warning(cfg, args.out),
+                                   _git_warning(cfg)] if w],
           "boards": out, "empty": empty})
     return 0 if not empty else 2
 
