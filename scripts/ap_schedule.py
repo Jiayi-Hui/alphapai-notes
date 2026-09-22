@@ -135,9 +135,9 @@ def _macos_plan(command: list[str], time_hhmm: str, label: str) -> Plan:
         notes=[
             "A user LaunchAgent runs in the user's GUI session, which is what "
             "the browser profile needs.",
-            "viaim-auth stores credentials in Windows Credential Manager, so "
-            "on macOS the profile must already hold a usable session, or the "
-            "helper must be given a macOS-native credential source.",
+            "On macOS the credential comes from the login keychain; add it "
+            "with `security add-generic-password -s 'AlphaPai:Login' -a "
+            "'<account>' -w` before scheduling.",
             f"Remove with: launchctl unload -w {plist_path} && rm {plist_path}",
         ],
         artifact_path=str(plist_path),
@@ -160,8 +160,9 @@ def _linux_plan(command: list[str], time_hhmm: str) -> Plan:
         notes=[
             "Add this line with `crontab -e`:",
             line,
-            "A headless run still needs a browser profile that holds a valid "
-            "session, plus a credential source viaim-auth supports.",
+            "A headless run still needs a browser profile with a valid "
+            "session; on Linux there is no OS keystore here, so the credential "
+            "must come from ALPHAPAI_USERNAME / ALPHAPAI_PASSWORD.",
         ],
     )
 

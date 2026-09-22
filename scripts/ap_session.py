@@ -3,9 +3,8 @@
 Credential policy (hard constraint):
     This module never reads, stores, derives or logs a username, password,
     token, cookie, Authorization header, localStorage entry or signed URL.
-    Authentication is delegated entirely to the `viaim-auth` helper, which
-    keeps the credential in Windows Credential Manager and types it into a
-    dedicated browser profile. Everything here rides on the browser's own
+    Login belongs to `ap_auth`, which reads the secret from the OS keystore at
+    the moment it fills the form. Everything here rides on the browser's own
     authenticated context: the page issues its own requests and this module
     only reads the resulting response bodies.
 
@@ -17,9 +16,10 @@ that scrapes, instead of assuming a leftover session.
 from __future__ import annotations
 
 import os
-import sys
 from contextlib import contextmanager
 from pathlib import Path
+
+import ap_auth
 
 BASE_URL = "https://alphapai-web.rabyte.cn"
 ALLOWED_HOSTS = ("alphapai-web.rabyte.cn",)
@@ -34,59 +34,16 @@ class SessionError(RuntimeError):
     """Raised when the browser session cannot be established."""
 
 
-def _candidate_auth_dirs() -> list[Path]:
-    """Where viaim-auth's scripts/ might live, most explicit first."""
-    out: list[Path] = []
-    env = os.environ.get("VIAIM_AUTH_SCRIPTS")
-    if env:
-        out.append(Path(env))
-    here = Path(__file__).resolve()
-    # sibling skill in the same skills/ directory, then a few common layouts
-    out.append(here.parent.parent.parent / "viaim-auth" / "scripts")
-    out.append(here.parent.parent / "viaim-auth" / "scripts")
-    local = os.environ.get("LOCALAPPDATA")
-    if local:
-        out.append(Path(local) / "ViaimAuth" / "scripts")
-    return out
-
-
-def load_auth_module():
-    """Import viaim_auth from whichever location is present.
-
-    alphapai-notes deliberately does not vendor a copy of the login code: the
-    credential handling must stay in one audited place.
-    """
-    tried = []
-    for d in _candidate_auth_dirs():
-        tried.append(str(d))
-        if (d / "viaim_auth.py").exists():
-            if str(d) not in sys.path:
-                sys.path.insert(0, str(d))
-            import viaim_auth  # noqa: PLC0415
-
-            return viaim_auth
-    raise SessionError(
-        "viaim-auth helper not found. alphapai-notes delegates login to it and "
-        "never handles credentials itself. Set VIAIM_AUTH_SCRIPTS to the "
-        "viaim-auth 'scripts' directory. Looked in: " + "; ".join(tried)
-    )
-
-
 def profile_dir() -> Path:
-    """The dedicated AlphaPai automation profile owned by viaim-auth."""
-    override = os.environ.get("ALPHAPAI_PROFILE_DIR")
-    if override:
-        return Path(override)
-    root = os.environ.get("LOCALAPPDATA") or str(Path.home())
-    return Path(root) / "ViaimAuth" / "BrowserProfiles" / "alphapai"
+    """The browser profile dedicated to AlphaPai automation."""
+    return ap_auth.profile_dir()
 
 
 def assert_on_allowlist(page) -> None:
-    from urllib.parse import urlsplit
-
-    host = (urlsplit(page.url).hostname or "").lower()
-    if host not in ALLOWED_HOSTS:
-        raise SessionError(f"navigated off the approved host: {host or page.url}")
+    try:
+        ap_auth.assert_allowed_host(page)
+    except ap_auth.AuthError as exc:
+        raise SessionError(str(exc)) from None
 
 
 @contextmanager
@@ -94,8 +51,9 @@ def session(headless: bool = True, timeout_ms: int = DEFAULT_TIMEOUT_MS,
             viewport: tuple[int, int] = (1600, 1000), offscreen: bool = False):
     """Yield (context, page, auth_state) with the profile already logged in.
 
-    The login attempt happens once per run. viaim-auth refuses to loop on
-    rejected credentials, and this wrapper does not retry it either.
+    The login attempt happens once per run: `ap_auth` does not loop on a
+    rejected credential, and this wrapper does not retry it either, so a wrong
+    password cannot turn into a lockout.
 
     `offscreen` keeps a headed browser out of the way: file downloads only
     arrive in headed mode, but a window popping up over the user's work every
@@ -106,8 +64,6 @@ def session(headless: bool = True, timeout_ms: int = DEFAULT_TIMEOUT_MS,
     except ImportError as exc:  # pragma: no cover
         raise SessionError("Python package 'playwright' is not installed") from exc
 
-    auth = load_auth_module()
-    provider = auth.PROVIDERS["alphapai"]
     pdir = profile_dir()
     pdir.mkdir(parents=True, exist_ok=True)
 
@@ -127,7 +83,10 @@ def session(headless: bool = True, timeout_ms: int = DEFAULT_TIMEOUT_MS,
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.set_default_timeout(timeout_ms)
-            state = auth.ensure_login(page, provider, timeout_ms)
+            try:
+                state = ap_auth.ensure_login(page, timeout_ms)
+            except ap_auth.AuthError as exc:
+                raise SessionError(str(exc)) from None
             assert_on_allowlist(page)
             yield ctx, page, state
         finally:

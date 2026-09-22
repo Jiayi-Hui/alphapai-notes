@@ -2,6 +2,7 @@
 """alphapai-notes - capture AlphaPai notes into an Obsidian vault.
 
 Commands
+    auth       inspect or exercise login (credential stays in the keystore)
     config     inspect or set the vault, formats and kinds
     probe      log in and verify every view still resolves
     list       list 转记 records (metadata only)
@@ -11,9 +12,9 @@ Commands
     api-status report whether the optional OpenPai API route is usable
 
 Credential policy: this tool never handles a password, token, cookie or
-Authorization header. Login is delegated to the viaim-auth helper, which
-types a Credential Manager secret into a dedicated browser profile; every
-data read here comes from responses the logged-in page fetched itself.
+Authorization header. `ap_auth` reads the secret from the OS keystore at the
+moment it fills the login form, in a browser profile dedicated to AlphaPai;
+every data read here comes from responses the logged-in page fetched itself.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import ap_auth  # noqa: E402
 from ap_config import Config, guess_vaults  # noqa: E402
 from ap_convert import (KINDS, Note, artifact_extension, fetch_artifact,  # noqa: E402
                         list_notes, safe_filename)
@@ -492,6 +494,69 @@ def cmd_schedule(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# auth
+# ---------------------------------------------------------------------------
+
+def cmd_auth(args) -> int:
+    """Inspect or exercise the login, without ever handling the credential."""
+    if args.action == "status":
+        info = ap_auth.credential_target()
+        info["profile_dir"] = str(ap_auth.profile_dir())
+        if not info["configured"]:
+            info["how_to_set"] = _credential_setup_hint()
+        emit({"status": "configured" if info["configured"] else "not_configured",
+              **info})
+        return 0 if info["configured"] else 2
+
+    if args.action == "setup":
+        # The agent never collects the password; it only points at the prompt.
+        emit({"status": "ok", "instructions": _credential_setup_hint(),
+              "note": ("Type the password into that window yourself. This tool "
+                       "accepts no password argument, and the agent driving it "
+                       "never sees the value.")})
+        return 0
+
+    headless = not args.headed
+    try:
+        with session(headless=headless) as (ctx, page, state):
+            if args.action == "login":
+                emit({"status": state, "authenticated": True,
+                      "credential_source": ap_auth.credential_source()})
+                return 0
+            if args.action == "probe":
+                emit({"status": "probe_succeeded", **ap_auth.probe(page)})
+                return 0
+            result = ap_auth.logout(page)
+            emit({"status": result, "authenticated": False})
+            return 0
+    except ap_auth.AuthError as exc:
+        emit({"status": "failed", "stage": "auth", "error": str(exc)})
+        return 3
+
+
+def _credential_setup_hint() -> dict:
+    import platform as _platform
+
+    system = _platform.system()
+    scripts = Path(__file__).parent
+    if system == "Windows":
+        primary = (f'powershell -ExecutionPolicy Bypass -File '
+                   f'"{scripts / "Open-AlphaPaiCredentialPrompt.ps1"}"')
+    elif system == "Darwin":
+        primary = ("security add-generic-password -s 'AlphaPai:Login' "
+                   "-a '<your account>' -w")
+    else:
+        primary = None
+    return {
+        "recommended": primary,
+        "store": "OS keystore (ACL-protected, cannot be committed)",
+        "alternative": ("set ALPHAPAI_USERNAME and ALPHAPAI_PASSWORD in the "
+                        "environment, or copy .env.example to .env - intended "
+                        "for CI/containers; plaintext at rest"),
+    }
+
+
+# ---------------------------------------------------------------------------
 # api-status
 # ---------------------------------------------------------------------------
 
@@ -506,7 +571,7 @@ def cmd_api_status(args) -> int:
     key_present = bool(os.environ.get("ALPHAPAI_API_KEY"))
     emit({
         "status": "ok",
-        "primary_route": "headless browser (viaim-auth login + response capture)",
+        "primary_route": "browser session (ap_auth login + response capture)",
         "api_key_env_set": key_present,
         "api_route_enabled": False,
         "requirement": (
@@ -625,6 +690,11 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--apply", action="store_true",
                     help="actually write the schedule (otherwise dry run)")
     sc.set_defaults(func=cmd_schedule)
+
+    au = add("auth", help="inspect or exercise AlphaPai login")
+    au.add_argument("action",
+                    choices=["status", "setup", "login", "probe", "logout"])
+    au.set_defaults(func=cmd_auth)
 
     ap = add("api-status",
              help="report whether the optional OpenPai API is usable")

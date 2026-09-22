@@ -23,11 +23,13 @@ app. You say what you want in plain language and the agent picks the command
 and the flags. The CLI below is for scripting and scheduling — you don't need
 to memorise it.
 
-**2. It never sees your password.** Login is delegated to a separate helper
-(`viaim-auth`) that keeps your credential in Windows Credential Manager and
-types it into a dedicated browser profile. This tool only reads what the
-already-logged-in page fetched for itself. It has no code path that touches a
-password, token or cookie — deliberately, so don't add one.
+**2. It never sees your password, and neither does your agent.** The
+credential lives in your OS keystore — Windows Credential Manager or the macOS
+Keychain. You type it once into your own console window; the skill reads it
+only at the instant it fills the login form, inside a browser profile reserved
+for AlphaPai. No command takes a password as an argument, and an agent driving
+this only ever sees status words like `authenticated`. Everything else it
+reads comes from responses the logged-in page fetched for itself.
 
 **3. There are two different datasets.** *Your* 转记 records (things you
 uploaded or recorded) and the *platform's* 发现 boards (what everyone sees).
@@ -122,6 +124,20 @@ pip install playwright python-docx
 python -m playwright install          # uses your installed Edge, not a bundled browser
 ```
 
+Store your AlphaPai login. This opens a separate window — you type it there,
+and it goes straight into the OS keystore:
+
+```bash
+# Windows
+powershell -ExecutionPolicy Bypass -File scripts/Open-AlphaPaiCredentialPrompt.ps1
+
+# macOS
+security add-generic-password -s 'AlphaPai:Login' -a '<your account>' -w
+
+# either platform: confirm it landed, without revealing it
+python scripts/alphapai_notes.py auth status
+```
+
 Point it at your vault (it can go looking for one):
 
 ```bash
@@ -130,8 +146,35 @@ python scripts/alphapai_notes.py config --set-vault "D:/Obsidian/MyVault" --set-
 python scripts/alphapai_notes.py probe
 ```
 
-You also need `viaim-auth` installed and holding your AlphaPai credential. If
-it isn't a sibling directory, set `VIAIM_AUTH_SCRIPTS` to its `scripts` folder.
+### Can I just put my login in a `.env`?
+
+You can, and the skill will read `ALPHAPAI_USERNAME` / `ALPHAPAI_PASSWORD` from
+the environment or from an untracked `.env` (copy `.env.example`). But it is
+the *second* choice on purpose, and it's worth knowing why.
+
+A `.env` is plaintext at rest. Anything running as you can read it, it follows
+the folder into backups and sync clients, and the classic accident — committing
+it — publishes your password to everyone with repo access. The OS keystore has
+none of those properties: it is encrypted per-user, ACL-protected, and there is
+no path by which it ends up in git.
+
+The industry convention is roughly:
+
+| Where | Normal practice |
+| --- | --- |
+| Your own workstation | OS keystore, or a password manager's CLI |
+| CI / containers | secrets injected as environment variables by the platform |
+| Servers / production | a secret manager (Vault, AWS/Azure) with rotation and audit |
+| `.env` files | non-secret config, or low-value local dev credentials |
+
+Environment *variables* as the injection channel are standard — that part of
+twelve-factor is fine. What isn't standard is a long-lived personal password
+sitting in a file next to your code. So: keystore on your laptop, `.env` when
+there's no keystore to use (a container, a Linux box, CI).
+
+Two guardrails are built in: the loader refuses a `.env` that git tracks, and
+`auth status` reports which source a login would come from, so an accidental
+downgrade to plaintext is visible rather than silent.
 
 Settings live in your own config directory (`%APPDATA%/alphapai-notes/` on
 Windows), never in this repo — so the repo stays portable and your paths stay
@@ -167,6 +210,11 @@ without granted interface permissions answers every endpoint with
 `code=401001 saas用户暂无接口调用权限`. Rather than retry that forever, this
 skill never probes it; `api-status` states the requirement. If you want it, ask
 an Alpha派 administrator to grant access, then supply `ALPHAPAI_API_KEY`.
+
+**The first run on a new machine needs the credential prompt, not a config
+file.** There is no password field anywhere in the repo or its config; the
+setup step opens a console window for you instead. That is the whole
+onboarding cost, and it is once per machine.
 
 **Sessions expire within minutes.** Every command logs in again inside the same
 process that scrapes. Don't build anything on "it should still be logged in".

@@ -1,6 +1,6 @@
 ---
 name: alphapai-notes
-description: Capture AlphaPai (Alpha派) content into an Obsidian vault - PaiPai 转记 records as Markdown/docx/PDF notes, plus read-only list captures of the 发现 boards (机构热议, 推荐, 分析师, 自选, 板块). Use when the user wants to download, sync, archive or schedule AlphaPai notes, meeting transcripts, AI summaries or discovery feeds into Obsidian. Logs in through the viaim-auth helper and never handles credentials itself. Do not use for posting, deleting or modifying anything on AlphaPai.
+description: Capture AlphaPai (Alpha派) content into an Obsidian vault - PaiPai 转记 records as Markdown/docx/PDF notes, plus read-only list captures of the 发现 boards (机构热议, 推荐, 分析师, 自选, 板块). Use when the user wants to download, sync, archive or schedule AlphaPai notes, meeting transcripts, AI summaries or discovery feeds into Obsidian. Self-contained login reads the secret from the OS keystore and never exposes it. Do not use for posting, deleting or modifying anything on AlphaPai.
 ---
 
 # AlphaPai Notes
@@ -18,10 +18,23 @@ Two datasets, one browser session:
 
 ## Credential boundary
 
-This skill never sees a password, token, cookie or `Authorization` header.
-Login is delegated to the sibling **viaim-auth** skill, which types a Windows
-Credential Manager secret into a dedicated browser profile. Everything read
-here comes from responses the already-logged-in page fetched for itself.
+Login lives in `scripts/ap_auth.py` and is self-contained - the skill has no
+dependency on another auth helper. The secret is read from the OS keystore
+(Windows Credential Manager or macOS login keychain, target `AlphaPai:Login`)
+at the moment the form is filled, inside a browser profile dedicated to
+AlphaPai. Nothing prints, logs, returns or stores it; an agent driving this
+sees status words only.
+
+The user enters the credential themselves in their own console window
+(`scripts/Open-AlphaPaiCredentialPrompt.ps1`). No code path accepts a password
+as an argument or reads one from a repository file. `ALPHAPAI_USERNAME` /
+`ALPHAPAI_PASSWORD` (optionally seeded from an untracked `.env`) exist as a
+second-priority source for CI and containers; the loader refuses a `.env` that
+git tracks, and `auth status` reports which source is in use.
+
+Never tick the login page's agreement checkbox in code - accepting terms is
+the user's act. If AlphaPai starts enforcing it, login fails with an explicit
+message instead.
 
 Do not add code that reads `localStorage`, cookies, or request headers. Two
 shortcuts were tried and both correctly fail: requesting the storage URL
@@ -31,11 +44,15 @@ The supported path is to let the app fetch its own file.
 ## Setup
 
 ```bash
-# 1. point it at your vault (or let it look for one)
+# 1. store the credential (you type it in your own window)
+powershell -ExecutionPolicy Bypass -File scripts/Open-AlphaPaiCredentialPrompt.ps1
+python scripts/alphapai_notes.py auth status
+
+# 2. point it at your vault (or let it look for one)
 python scripts/alphapai_notes.py config --detect-vaults
 python scripts/alphapai_notes.py config --set-vault "D:/Obsidian/MyVault" --set-subdir AlphaPai
 
-# 2. confirm login works and every view still resolves
+# 3. confirm login works and every view still resolves
 python scripts/alphapai_notes.py probe
 ```
 
@@ -43,9 +60,9 @@ Config lives in the user's own config dir (`%APPDATA%/alphapai-notes/config.json
 on Windows), never in the repo. `ALPHAPAI_NOTES_OUT` or `--out` override the
 destination for one run.
 
-Requirements: Windows/macOS, Microsoft Edge, Python 3 with `playwright` and
-`python-docx`, and a working viaim-auth install. If viaim-auth lives elsewhere,
-set `VIAIM_AUTH_SCRIPTS` to its `scripts` directory.
+Requirements: Windows or macOS, Microsoft Edge, Python 3 with `playwright` and
+`python-docx`. `auth` subcommands (`status`, `setup`, `probe`, `login`,
+`logout`) manage the session; `ap_auth.py` also runs standalone for diagnosis.
 
 ## Everyday use
 

@@ -8,9 +8,9 @@ the skill stays portable and nothing local leaks into git.
   macOS   : ~/Library/Application Support/alphapai-notes/config.json
   Linux   : ~/.config/alphapai-notes/config.json
 
-Nothing secret belongs in this file. The AlphaPai password stays in Windows
-Credential Manager (owned by viaim-auth) and an OpenPai API key is read from
-the environment at call time.
+Nothing secret belongs in this file. The AlphaPai password stays in the OS
+keystore (see `ap_auth`), and an OpenPai API key is read from the environment
+at call time.
 """
 
 from __future__ import annotations
