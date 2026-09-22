@@ -1,0 +1,4 @@
+interface:
+  display_name: "AlphaPai Notes"
+  short_description: "Capture AlphaPai 转记 and 发现 boards into an Obsidian vault"
+  default_prompt: "Capture my AlphaPai notes into Obsidian as Markdown, without touching credentials."
