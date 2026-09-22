@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Browser automation state - never belongs in the repo
+.playwright/
+BrowserProfile*/
+BrowserProfiles/
+
+# Captured content is personal meeting data; keep it in the vault
+alphapai_notes/
+out/
+exports/
+*.docx
+*.pdf
+*.mp3
+*.m4a
+*.webm
+
+# Local machine configuration (vault paths, discovered routes)
+config.json
+config.local.json
+
+# Credentials must never appear here in any form
+*.key
+*.token
+.env
