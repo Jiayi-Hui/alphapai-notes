@@ -211,6 +211,12 @@ without granted interface permissions answers every endpoint with
 skill never probes it; `api-status` states the requirement. If you want it, ask
 an Alpha派 administrator to grant access, then supply `ALPHAPAI_API_KEY`.
 
+**It ticks the login page's "已阅读并同意" box for you.** You asked for that,
+and the authorisation is scoped to exactly that one checkbox on the login form
+— no cookie banner, consent dialog or other terms prompt is ever accepted on
+your behalf. In practice AlphaPai ships it pre-ticked, so most runs report
+`already_accepted`; `auth login` prints the outcome either way.
+
 **The first run on a new machine needs the credential prompt, not a config
 file.** There is no password field anywhere in the repo or its config; the
 setup step opens a console window for you instead. That is the whole

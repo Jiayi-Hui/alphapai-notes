@@ -32,9 +32,16 @@ as an argument or reads one from a repository file. `ALPHAPAI_USERNAME` /
 second-priority source for CI and containers; the loader refuses a `.env` that
 git tracks, and `auth status` reports which source is in use.
 
-Never tick the login page's agreement checkbox in code - accepting terms is
-the user's act. If AlphaPai starts enforcing it, login fails with an explicit
-message instead.
+The account owner authorised this skill to tick the login page's 已阅读并同意
+checkbox on their behalf (2026-09-22). That authorisation covers **only** that
+one control on the login form - never a cookie banner, consent dialog or any
+other terms prompt on the site. Do not widen it.
+
+Implementation note: AlphaPai uses Element UI, so the real
+`input[type=checkbox]` is `.el-checkbox__original` at 0x0 and is never
+"visible"; the state is the `is-checked` class on the wrapping
+`label.el-checkbox`. The box also arrives already ticked, so this is not a
+gate - a failure to operate it is recorded, not raised, and login proceeds.
 
 Do not add code that reads `localStorage`, cookies, or request headers. Two
 shortcuts were tried and both correctly fail: requesting the storage URL

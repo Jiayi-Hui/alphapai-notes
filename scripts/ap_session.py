@@ -87,6 +87,7 @@ def session(headless: bool = True, timeout_ms: int = DEFAULT_TIMEOUT_MS,
                 state = ap_auth.ensure_login(page, timeout_ms)
             except ap_auth.AuthError as exc:
                 raise SessionError(str(exc)) from None
+
             assert_on_allowlist(page)
             yield ctx, page, state
         finally:

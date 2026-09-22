@@ -18,10 +18,11 @@ its own, with no dependency on any other auth helper:
     add-generic-password` on macOS). No code path accepts a password as an
     argument, environment variable or file.
 
-It deliberately does NOT tick the login page's agreement checkbox. Accepting
-terms on someone's behalf is theirs to do; if AlphaPai ever starts enforcing
-that checkbox, login fails with an explicit message instead of silently
-consenting.
+The account owner authorised this helper to tick the login page's 已阅读并同意
+checkbox on their behalf (2026-09-22). That authorisation covers exactly that
+one control on the login form - no cookie banner, consent dialog or other
+terms prompt anywhere on the site is ever accepted. See
+`accept_login_agreement`.
 """
 
 from __future__ import annotations
@@ -454,29 +455,58 @@ def looks_authenticated(page) -> bool:
         return False
 
 
-def _agreement_blocks_login(page) -> bool:
-    """Is there an unchecked agreement box gating the submit?
+def accept_login_agreement(page) -> str:
+    """Tick the login page's 已阅读并同意 checkbox.
 
-    This skill never ticks it. If AlphaPai starts enforcing it, the caller gets
-    a clear error and the user consents in a headed window themselves.
+    The account owner explicitly authorised this on 2026-09-22 ("直接自动勾选
+    / 替我"), so the skill consents on their behalf for this one control.
+
+    The scope is deliberately narrow, and should stay that way:
+
+      * only the checkbox attached to the login form's 已阅读并同意 text;
+      * no other consent dialog, cookie banner or terms prompt anywhere on the
+        site is ever accepted;
+      * the linked agreements are not opened, and nothing else is clicked.
+
+    AlphaPai builds this with Element UI, which matters: the real
+    `input[type=checkbox]` is `.el-checkbox__original`, rendered 0x0 and
+    therefore never "visible" to a normal locator. The state lives in the
+    wrapping `label.el-checkbox`'s `is-checked` class, and the clickable target
+    is that label. Looking for a visible input finds nothing at all.
+
+    In practice the box already arrives ticked, which is why login worked
+    before this function existed.
+
+    Returns one of: accepted, already_accepted, not_present, not_recognized.
     """
     try:
-        text = _first_visible([page.get_by_text(AGREEMENT_TEXT)])
-        if not text:
-            return False
-        box = _first_visible([
-            text.locator("xpath=ancestor-or-self::label[1]").locator('input[type="checkbox"]'),
-            text.locator("xpath=..").locator('input[type="checkbox"]'),
-            text.locator("xpath=../*[@role='checkbox']"),
-        ])
-        if not box:
-            return False
-        tag = (box.evaluate("e => e.tagName") or "").lower()
-        if tag == "input":
-            return not box.is_checked()
-        return box.get_attribute("aria-checked") != "true"
+        state = page.evaluate(
+            """() => {
+                const scope = document.querySelector('.user-agreement');
+                const label = (scope || document).querySelector('label.el-checkbox');
+                if (!label) return 'not_present';
+                return label.classList.contains('is-checked')
+                    ? 'already_accepted' : 'unchecked';
+            }""")
+        if state in ("not_present", "already_accepted"):
+            return state
+
+        target = page.locator(".user-agreement label.el-checkbox").first
+        if not target.count():
+            target = page.locator("label.el-checkbox").first
+        if not target.count():
+            return "not_recognized"
+        target.click(timeout=5000)
+        page.wait_for_timeout(300)
+        confirmed = page.evaluate(
+            """() => {
+                const scope = document.querySelector('.user-agreement');
+                const label = (scope || document).querySelector('label.el-checkbox');
+                return !!label && label.classList.contains('is-checked');
+            }""")
+        return "accepted" if confirmed else "not_recognized"
     except Exception:
-        return False
+        return "not_recognized"
 
 
 def navigate_home(page, timeout_ms: int) -> None:
@@ -489,8 +519,12 @@ def navigate_home(page, timeout_ms: int) -> None:
 # operations
 # ---------------------------------------------------------------------------
 
-def ensure_login(page, timeout_ms: int = 45_000) -> str:
+def ensure_login(page, timeout_ms: int = 45_000,
+                 report: dict | None = None) -> str:
     """Make the page authenticated. Returns a status word, never a credential.
+
+    Pass `report` to receive non-secret details about what happened (which
+    credential source was used, whether the agreement checkbox was ticked).
 
     AlphaPai sessions expire within minutes, so callers should run this inside
     the same process that then does the work, rather than assuming a profile
@@ -498,6 +532,8 @@ def ensure_login(page, timeout_ms: int = 45_000) -> str:
     """
     navigate_home(page, timeout_ms)
     if looks_authenticated(page):
+        if report is not None:
+            report["agreement"] = "not_needed"
         return "already_authenticated"
 
     if not activate_password_login(page):
@@ -515,14 +551,17 @@ def ensure_login(page, timeout_ms: int = 45_000) -> str:
                                   ("submit", submit)) if not v]
         raise AuthError(f"login form incomplete; could not find: {', '.join(missing)}")
 
-    if _agreement_blocks_login(page):
-        raise AuthError(
-            "the login page shows an unticked agreement checkbox. This skill "
-            "does not accept terms on your behalf - tick it once yourself in a "
-            "headed window (`probe --headed`), then retry."
-        )
+    # Not a gate: the checkbox arrives ticked and login succeeds regardless, so
+    # failing to operate it must not block an otherwise working login. The
+    # outcome is recorded, and if the submit then fails the error says to check
+    # it by hand.
+    agreement = accept_login_agreement(page)
+    if report is not None:
+        report["agreement"] = agreement
 
     username, secret = _read_credential(require=True)
+    if report is not None:
+        report["credential_source"] = credential_source()
     try:
         account.fill(username)
         secret_field.fill(secret)
@@ -534,9 +573,11 @@ def ensure_login(page, timeout_ms: int = 45_000) -> str:
             if looks_authenticated(page):
                 return "authenticated"
         raise AuthError(
-            "submitted the login form but never reached an authenticated page. "
-            "The password may be wrong or the account may require a code; this "
-            "helper does not retry, to avoid a lockout."
+            "submitted the login form but never reached an authenticated page "
+            f"(agreement checkbox: {agreement}). The password may be wrong, the "
+            "account may require a code, or the agreement may need ticking by "
+            "hand in a headed window (`python scripts/ap_auth.py probe "
+            "--headed`). This helper does not retry, to avoid a lockout."
         )
     finally:
         # drop references promptly; do not let them reach a traceback
@@ -652,7 +693,9 @@ def main() -> int:
         if args.command == "probe":
             _emit({"status": "probe_succeeded", **probe(page, timeout_ms)})
         elif args.command == "login":
-            _emit({"status": ensure_login(page, timeout_ms), "authenticated": True})
+            detail: dict = {}
+            state = ensure_login(page, timeout_ms, report=detail)
+            _emit({"status": state, "authenticated": True, **detail})
         else:
             _emit({"status": logout(page, timeout_ms), "authenticated": False})
         return 0
