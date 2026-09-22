@@ -168,10 +168,21 @@ cannot be re-scraped. Use `--no-json` if you only want the note.
 
 Once, before anything works:
 
+On a new machine, the easiest route is to say so:
+
+> 「帮我在这台电脑上把 AlphaPai 这个 skill 配起来」
+
+The agent runs `doctor`, installs what it can, and walks you through the parts
+only you can do. If you would rather drive it yourself:
+
 ```bash
 pip install playwright python-docx
-python -m playwright install          # uses your installed Edge, not a bundled browser
 ```
+
+That is usually all the installing there is — the skill drives your installed
+Microsoft Edge rather than downloading a browser, so `playwright install` is
+normally unnecessary. You do need Edge itself
+([microsoft.com/edge](https://www.microsoft.com/edge)).
 
 At any point, ask the skill what is still missing:
 
@@ -315,6 +326,11 @@ and the authorisation is scoped to exactly that one checkbox on the login form
 — no cookie banner, consent dialog or other terms prompt is ever accepted on
 your behalf. In practice AlphaPai ships it pre-ticked, so most runs report
 `already_accepted`; `auth login` prints the outcome either way.
+
+**A new machine needs three things you cannot copy over:** Edge installed,
+the credential in that machine's own keystore, and a vault chosen. Everything
+else — the two pip packages, the route cache — the agent can set up for you.
+`doctor` tells you which of these is missing and which it can fix itself.
 
 **The first run on a new machine needs the credential prompt, not a config
 file.** There is no password field anywhere in the repo or its config; the

@@ -616,12 +616,15 @@ def cmd_doctor(args) -> int:
     cfg = Config.load()
     checks: list[dict] = []
 
-    def add(name, ok, detail, fix=None, blocking=True):
+    def add(name, ok, detail, fix=None, blocking=True, auto=False):
+        """`auto` marks a fix the agent may just run; everything else needs
+        the user (installing an app, typing a password, choosing a folder)."""
         item = {"check": name, "ok": bool(ok), "detail": detail}
-        if not ok and fix:
-            item["fix"] = fix
         if not ok:
             item["blocking"] = blocking
+            item["auto_fixable"] = auto
+            if fix:
+                item["fix"] = fix
         checks.append(item)
 
     version = ".".join(str(x) for x in sys.version_info[:3])
@@ -632,17 +635,20 @@ def cmd_doctor(args) -> int:
         import playwright  # noqa: F401
         add("playwright", True, "installed")
     except ImportError:
-        add("playwright", False, "missing", "pip install playwright")
+        add("playwright", False, "missing",
+            f"{sys.executable} -m pip install playwright", auto=True)
 
     try:
         import docx  # noqa: F401
         add("python-docx", True, "installed")
     except ImportError:
         add("python-docx", False, "missing",
-            "pip install python-docx (needed for markdown export)")
+            f"{sys.executable} -m pip install python-docx", auto=True)
 
     ok, detail = _check_edge()
-    add("microsoft edge", ok, detail if ok else "not found", detail)
+    add("microsoft edge", ok, detail if ok else "not found",
+        "install Microsoft Edge from https://www.microsoft.com/edge - the skill "
+        "drives the installed browser rather than downloading its own")
 
     cred = ap_auth.credential_target()
     add("credential", cred["configured"],
@@ -672,16 +678,30 @@ def cmd_doctor(args) -> int:
     routes = cfg.data.get("routes") or {}
     add("routes cached", bool(routes),
         f"{len(routes)} cached" if routes else "none yet (run `probe`)",
-        "run `probe` once to discover and cache them", blocking=False)
+        "run `probe` once to discover and cache them",
+        blocking=False, auto=True)
 
     blocking = [c["check"] for c in checks if not c["ok"] and c.get("blocking")]
     advisory = [c["check"] for c in checks if not c["ok"] and not c.get("blocking")]
-    emit({"status": "ok" if not blocking else "not_ready",
-          "platform": f"{_platform.system()} {_platform.release()}",
-          "checks": checks,
-          "blocking": blocking, "advisory": advisory,
-          "next": ("run `probe`, then `list`" if not blocking
-                   else "fix the blocking items above, then run `doctor` again")})
+    auto = [c["fix"] for c in checks
+            if not c["ok"] and c.get("auto_fixable") and c.get("fix")]
+    manual = [{"check": c["check"], "fix": c.get("fix")} for c in checks
+              if not c["ok"] and not c.get("auto_fixable")]
+
+    payload = {"status": "ok" if not blocking else "not_ready",
+               "platform": f"{_platform.system()} {_platform.release()}",
+               "checks": checks,
+               "blocking": blocking, "advisory": advisory}
+    if auto:
+        payload["run_these_yourself"] = auto
+    if manual:
+        # Things only the user can do: install an app, type a password, pick a
+        # folder. Walk them through these rather than pasting the list back.
+        payload["needs_the_user"] = manual
+    payload["next"] = ("run `probe`, then `list`" if not blocking
+                       else "install the auto-fixable items, guide the user "
+                            "through the rest, then run `doctor` again")
+    emit(payload)
     return 0 if not blocking else 2
 
 

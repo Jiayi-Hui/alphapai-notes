@@ -50,8 +50,25 @@ The supported path is to let the app fetch its own file.
 
 ## First run is a conversation, not a command list
 
-When something is unconfigured, **collect it by talking to the user** and run
-the command for them. Do not paste CLI instructions and wait.
+On a machine that has never run this, **start with `doctor`** and work through
+what it reports. Do not paste a setup checklist and wait.
+
+`doctor` splits its findings for exactly this purpose:
+
+- `run_these_yourself` — fixes the agent should just run (installing
+  `playwright` / `python-docx` with the current interpreter, running `probe` to
+  cache routes). Say what you are installing, run it, move on.
+- `needs_the_user` — things only they can do: installing Microsoft Edge,
+  typing the credential into their own console, choosing a vault. Walk them
+  through these one at a time; do not dump the list.
+
+Then re-run `doctor` and confirm `blocking` is empty before trying to capture
+anything. A typical cold start is: install two pip packages (agent), install
+Edge if absent (user), store the credential via the prompt script (user),
+choose a vault (user answers in chat, agent applies), `probe` (agent).
+
+`playwright install` is normally unnecessary - this skill drives the installed
+Edge through `channel="msedge"` rather than a downloaded browser.
 
 For the vault, in order:
 
