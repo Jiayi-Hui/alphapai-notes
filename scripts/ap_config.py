@@ -112,7 +112,11 @@ class Config:
         v = self.vault_path
         if v:
             return v / str(self.data.get("notes_subdir") or "AlphaPai")
-        return Path.cwd() / "alphapai_notes"
+        # Deliberately NOT the working directory: that scatters personal
+        # meeting notes into whatever repository happens to be cwd, where this
+        # skill's .gitignore cannot protect them. A fixed, predictable spot in
+        # the home directory is findable and belongs to no project.
+        return Path.home() / "AlphaPaiNotes"
 
     # ---------- routes ----------
 
@@ -157,6 +161,18 @@ def guess_vaults(limit: int = 12) -> list[str]:
     """
     found: list[str] = []
     system = platform.system()
+
+    # The user is frequently already inside a vault when they ask, so check
+    # the working directory and its parents before anything else.
+    try:
+        here = Path.cwd().resolve()
+        for base in [here, *here.parents]:
+            if (base / ".obsidian").is_dir():
+                marker = str(base)
+                if marker not in found:
+                    found.append(marker)
+    except OSError:
+        pass
 
     if system == "Windows":
         reg = Path(os.environ.get("APPDATA", "")) / "obsidian" / "obsidian.json"

@@ -38,7 +38,8 @@ the second only list metadata — titles, codes, times — not article full text
 
 **4. Everything lands in your vault.** You set the vault once. After that notes
 go to `<vault>/AlphaPai/` and board snapshots to `<vault>/AlphaPai/boards/`,
-named by date so they sort naturally.
+named by date so they sort naturally. Until you set one, they go to
+`~/AlphaPaiNotes` and every run says so.
 
 ---
 
@@ -51,7 +52,7 @@ actually run:
 | --- | --- | --- |
 | See what's on the platform | 「看看我 AlphaPai 上有哪些转记」 | `list` |
 | Sync new notes into Obsidian | 「把我 AlphaPai 上的新纪要同步到 Obsidian」 | `pull` |
-| One specific meeting | 「把那个讲英伟达 GTC 的纪要拉下来」 | `pull --match "GTC"` |
+| One specific meeting | 「把那个讲英伟达 GTC 的纪要拉下来」 | `pull --match "GTC"` (add `--include-examples` on a new account) |
 | Summary *and* transcript | 「纪要和逐字稿都要」 | `pull --kinds ai_summary,transcript` |
 | Keep the original Word file | 「md 之外也留一份 docx」 | `pull --format md,docx` |
 | Somewhere other than the vault | 「先放到桌面一个临时文件夹」 | `pull --out <path>` |
@@ -66,9 +67,11 @@ actually run:
 - **Name meetings by title, not by ID.** AlphaPai re-encrypts record IDs on
   every session, so an ID from yesterday is already dead. 「那个讲光模块的」
   works; a copied ID does not.
-- **Set the vault before your first sync.** Without one, notes land in a
-  folder inside the skill itself — the run says so in `warnings`, but it is
-  easier to just run `config --set-vault` first.
+- **Set the vault before your first sync.** Without one, notes land in
+  `~/AlphaPaiNotes` instead — deliberately a fixed spot in your home directory
+  rather than the current folder, so personal meeting notes never land inside
+  whatever repository you happened to be standing in. The run says so in
+  `warnings`, but it is easier to run `config --set-vault` first.
 - **Say which artifacts you want.** There are four kinds: `ai_summary` (the
   default), `transcript` (逐字稿 — raw speaker-by-speaker text, worth asking for
   when you want the actual quote rather than the summary's paraphrase), `audio`

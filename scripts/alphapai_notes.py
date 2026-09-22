@@ -64,17 +64,38 @@ def make_logger(quiet: bool):
     return log
 
 
+def _empty_hint(notes: list, selected: list, args) -> str | None:
+    """Explain an empty selection instead of leaving `records: []` bare.
+
+    On a new account the only records are AlphaPai's demo rows, which are
+    hidden by default - so the documented example commands return nothing,
+    successfully, with no indication why.
+    """
+    if selected or getattr(args, "include_examples", False):
+        return None
+    hidden = sum(1 for n in notes if n.is_example)
+    if hidden and hidden == len(notes):
+        return (f"nothing selected: all {hidden} record(s) on this account are "
+                "AlphaPai's 样例 demo rows, hidden by default. Add "
+                "--include-examples to list or fetch them.")
+    if hidden:
+        return (f"{hidden} 样例 demo row(s) were hidden; add --include-examples "
+                "to include them.")
+    if getattr(args, "match", None):
+        return f"no record title contains {args.match!r}; run `list` to see what exists."
+    return None
+
+
 def _vault_warning(cfg: "Config", out_override) -> str | None:
-    """Flag the silent fallback: no vault means notes land in the skill folder.
+    """Flag the silent fallback: no vault means notes land outside one.
 
     Documented as "everything lands in your vault", so a run that quietly
-    writes somewhere else has to say so.
+    writes somewhere else has to say where.
     """
     if out_override or cfg.vault_path:
         return None
     return (f"no Obsidian vault configured, so notes are being written to "
-            f"{cfg.output_dir()} (inside the skill folder). Set one with: "
-            "config --set-vault <path>")
+            f"{cfg.output_dir()}. Set one with: config --set-vault <path>")
 
 
 def _split(value: str | None) -> list[str]:
@@ -188,7 +209,8 @@ def cmd_list(args) -> int:
         cfg.save()
     selected = _select_notes(notes, cfg, args)
     emit({"status": "ok", "login": state,
-          "warnings": [w for w in [_vault_warning(cfg, None)] if w],
+          "warnings": [w for w in [_vault_warning(cfg, None),
+                                   _empty_hint(notes, selected, args)] if w],
           "total_seen": len(notes), "selected": len(selected),
           "examples_hidden": len(notes) - len(selected) if not args.include_examples else 0,
           "notes": [n.summary() for n in selected]})
@@ -321,6 +343,7 @@ def cmd_pull(args) -> int:
     # picks up the remainder. Records are re-matched by title because AlphaPai
     # re-encrypts record ids on every session.
     outstanding: list[tuple[str, str]] | None = None   # (title, kind)
+    extra_warnings: list[str] = []
     by_title: dict[str, dict] = {}
     restarts = 0
     state = "unknown"
@@ -333,6 +356,9 @@ def cmd_pull(args) -> int:
             session_notes = list_notes(page)
             selected = _select_notes(session_notes, cfg, args)
             if outstanding is None:
+                hint = _empty_hint(session_notes, selected, args)
+                if hint:
+                    extra_warnings.append(hint)
                 outstanding = [(n.title, k) for n in selected for k in kinds]
                 log(f"pull: {len(selected)} of {len(session_notes)} record(s) "
                     f"selected -> {out_dir}")
@@ -406,7 +432,8 @@ def cmd_pull(args) -> int:
     failures = sum(1 for r in results for v in r["kinds"].values() if "error" in v)
     payload = {"status": "ok" if not failures else "partial",
                "login": state, "output_dir": str(out_dir),
-               "warnings": [w for w in [_vault_warning(cfg, args.out)] if w],
+               "warnings": [w for w in [_vault_warning(cfg, args.out)] if w]
+                           + extra_warnings,
                "formats": formats, "kinds": kinds, "restarts": restarts,
                "records": results, "boards": boards_result,
                "failed_artifacts": failures}
