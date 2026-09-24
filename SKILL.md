@@ -92,6 +92,52 @@ choose a vault (user answers in chat, agent applies), `probe` (agent).
 `playwright install` is normally unnecessary - this skill drives the installed
 Edge through `channel="msedge"` rather than a downloaded browser.
 
+### Storing the credential: launch the prompt, then narrate it
+
+Do not print the command and wait for them to run it. Run it yourself:
+
+```
+powershell -ExecutionPolicy Bypass -File scripts/Open-AlphaPaiCredentialPrompt.ps1
+```
+
+That opens a separate console window and blocks until they close it. The moment
+you launch it, tell them what is now on screen and what to type:
+
+> 已经弹出一个 PowerShell 窗口。在那个窗口里：
+> 第一行 `AlphaPai account` 输入你的手机号或邮箱，回车；
+> 第二行 `AlphaPai password` 输入密码（**不会显示字符，是正常的**），回车。
+> 看到绿色的 `Credential saved to Windows Credential Manager.` 就可以关掉窗口。
+
+Two things that confuse people if unsaid: the password echoes nothing at all,
+and the window has to be closed before this command returns.
+
+When it returns, verify with `auth status` and report the source
+(`os_keystore`). On macOS there is no window - give them the `security
+add-generic-password` line to run in their own terminal, for the same reason.
+
+Never ask for the password in chat, never accept it as an argument, and never
+offer to "just set it up for them" - the whole point of the separate window is
+that the value never passes through you.
+
+### After a capture: offer to file it
+
+A capture that lands in `~/AlphaPaiNotes` because no vault is set is only half
+useful. When a run finishes and `warnings` says no vault is configured:
+
+1. Say what was captured and where it currently is.
+2. Ask whether they want it in their Obsidian vault, offering the candidates
+   from `config --detect-vaults` (their working directory and its parents are
+   checked first) or inviting a pasted path.
+3. When they give one, move the existing capture with it:
+   `config --set-vault "<path>" --move-existing` - it relocates what was
+   already written and never overwrites anything at the destination.
+4. Then ask once whether this should be the default for future AlphaPai
+   captures. Setting the vault already makes it the default, so frame it as
+   confirmation, and say what it means: every later `pull`/`boards` writes
+   to `<vault>/AlphaPai/` without asking again.
+
+If they decline a vault, leave it - do not ask again in the same session.
+
 For the vault, in order:
 
 1. Run `config --detect-vaults` yourself.

@@ -122,6 +122,48 @@ def _split(value: str | None) -> list[str]:
 # config
 # ---------------------------------------------------------------------------
 
+def _migrate_output(old_dir: Path, new_dir: Path) -> dict:
+    """Move already-captured files into the vault the user just chose.
+
+    People usually capture first and pick a vault afterwards, so the earlier
+    run's output would otherwise be stranded wherever it landed. Existing
+    files at the destination are never overwritten - they are reported and
+    left alone.
+    """
+    import shutil
+
+    if not old_dir.exists() or old_dir.resolve() == new_dir.resolve():
+        return {"moved": 0}
+    moved, skipped = [], []
+    for src in sorted(old_dir.rglob("*")):
+        if src.is_dir():
+            continue
+        dest = new_dir / src.relative_to(old_dir)
+        if dest.exists():
+            skipped.append(str(dest.name))
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.move(str(src), str(dest))
+            moved.append(str(dest))
+        except OSError as exc:
+            skipped.append(f"{src.name}: {exc}")
+    # clean up the now-empty tree we moved out of
+    for d in sorted((p for p in old_dir.rglob("*") if p.is_dir()), reverse=True):
+        try:
+            d.rmdir()
+        except OSError:
+            pass
+    try:
+        old_dir.rmdir()
+    except OSError:
+        pass
+    result = {"moved": len(moved), "from": str(old_dir), "to": str(new_dir)}
+    if skipped:
+        result["skipped"] = skipped
+    return result
+
+
 def cmd_config(args) -> int:
     cfg = Config.load()
     changed = False
@@ -132,6 +174,7 @@ def cmd_config(args) -> int:
         return 0
 
     if args.set_vault:
+        previous_output = cfg.output_dir()
         try:
             resolved = cfg.set_vault(args.set_vault)
         except ValueError as exc:
@@ -175,9 +218,16 @@ def cmd_config(args) -> int:
         cfg.data["routes"] = {}
         changed = True
 
+    migration = None
+    if args.set_vault and getattr(args, "move_existing", False):
+        migration = _migrate_output(previous_output, cfg.output_dir())
+
     saved = str(cfg.save()) if changed else None
-    emit({"status": "ok", "changed": changed, "saved_to": saved,
-          "config": cfg.describe()})
+    payload = {"status": "ok", "changed": changed, "saved_to": saved,
+               "config": cfg.describe()}
+    if migration is not None:
+        payload["migration"] = migration
+    emit(payload)
     return 0
 
 
@@ -825,6 +875,9 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--show", action="store_true", help="(default) print config")
     c.add_argument("--set-vault", metavar="PATH", help="Obsidian vault root")
     c.add_argument("--set-subdir", metavar="NAME", help="folder inside the vault")
+    c.add_argument("--move-existing", action="store_true",
+                   help="move already-captured files from the previous output "
+                        "directory into the new vault")
     c.add_argument("--set-formats", metavar="LIST", help="md,docx,pdf")
     c.add_argument("--set-kinds", metavar="LIST",
                    help="ai_summary,transcript,audio,all")
