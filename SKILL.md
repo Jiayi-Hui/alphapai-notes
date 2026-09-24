@@ -1,6 +1,6 @@
 ---
 name: alphapai-notes
-description: Capture AlphaPai (Alpha派) content into an Obsidian vault - PaiPai 转记 records as Markdown/docx/PDF notes, plus read-only list captures of the 发现 boards (机构热议, 推荐, 分析师, 自选, 板块). Use when the user wants to download, sync, archive or schedule AlphaPai notes, meeting transcripts, AI summaries or discovery feeds into Obsidian. Self-contained login reads the secret from the OS keystore and never exposes it. Do not use for posting, deleting or modifying anything on AlphaPai.
+description: 用已登录的浏览器把 AlphaPai(Alpha派)的内容抓进 Obsidian —— PaiPai 转记的 AI 纪要/逐字稿/录音,以及「发现」的机构热议、今日热点、推荐、分析师、自选、板块(每条话题含约 400 字摘要与相关个股涨跌)。抓取走浏览器,**不需要 OpenPai API key**,凭据存在系统 keystore。Use when the user wants to capture, download, sync, archive or schedule AlphaPai notes, transcripts, hot topics or discovery boards - including 抓今天的热点/机构热议. 若 OpenPai 接口返回 code=401001 无权限,正确做法是改用本 skill,而不是去申请 API 权限。Do not use for posting, deleting or modifying anything on AlphaPai.
 ---
 
 # AlphaPai Notes
