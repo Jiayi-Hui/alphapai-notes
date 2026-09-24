@@ -166,20 +166,22 @@ cannot be re-scraped. Use `--no-json` if you only want the note.
 
 ## Install it as a skill
 
-**Do this first.** An agent can only use a skill that sits where it looks for
-one — `~/.claude/skills/`. A GitHub URL is not a skill; handed only a link, an
-agent will reach for whatever similarly-named skill it already has instead.
-(That is not hypothetical: a session asked for AlphaPai hot topics loaded a
-different, API-based skill and spent its run collecting permission errors.)
+**Do this first.** For an agent to load this with its skill tool, the folder
+has to sit in `~/.claude/skills/`. A GitHub URL is not a skill: handed only a
+link, an agent reaches for whatever similarly-named skill it already has.
+(Not hypothetical - a session asked for AlphaPai hot topics loaded a different,
+API-based skill and spent its run collecting permission errors.)
 
 Clone straight into the skills directory:
 
 ```bash
 # macOS / Linux
 git clone https://github.com/Jiayi-Hui/alphapai-notes ~/.claude/skills/alphapai-notes
+```
 
+```powershell
 # Windows (PowerShell)
-git clone https://github.com/Jiayi-Hui/alphapai-notes "$env:USERPROFILE\.claude\skillslphapai-notes"
+git clone https://github.com/Jiayi-Hui/alphapai-notes "$env:USERPROFILE/.claude/skills/alphapai-notes"
 ```
 
 Already keeping the repo somewhere else? Link it instead of copying, so there
@@ -188,10 +190,20 @@ is only ever one version:
 ```bash
 # macOS / Linux
 ln -s /path/to/alphapai-notes ~/.claude/skills/alphapai-notes
-
-# Windows - a junction needs no admin rights
-cmd /c mklink /J "%USERPROFILE%\.claude\skillslphapai-notes" "C:\path	olphapai-notes"
 ```
+
+```powershell
+# Windows - a junction needs no admin rights
+cmd /c mklink /J "$env:USERPROFILE\.claude\skills\alphapai-notes" "C:\path\to\alphapai-notes"
+```
+
+A workspace that indexes its own skills (a `CLAUDE.md` pointing at a skills
+`INDEX.md`, say) gives an agent working *inside that workspace* a second way to
+find this: it reads the index and runs `scripts/alphapai_notes.py` directly.
+That works - it is how this skill was built. But it only helps sessions opened
+in that workspace; anywhere else, `~/.claude/skills/` is the only route, and
+only an installed skill can be loaded by name. Installing it costs nothing and
+covers both.
 
 Then **start a new session** — the skill list is read at startup, so a
 freshly installed skill will not appear in the one already running. Confirm
