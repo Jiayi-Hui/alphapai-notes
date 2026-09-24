@@ -164,9 +164,43 @@ cannot be re-scraped. Use `--no-json` if you only want the note.
 
 ---
 
+## Install it as a skill
+
+**Do this first.** An agent can only use a skill that sits where it looks for
+one — `~/.claude/skills/`. A GitHub URL is not a skill; handed only a link, an
+agent will reach for whatever similarly-named skill it already has instead.
+(That is not hypothetical: a session asked for AlphaPai hot topics loaded a
+different, API-based skill and spent its run collecting permission errors.)
+
+Clone straight into the skills directory:
+
+```bash
+# macOS / Linux
+git clone https://github.com/Jiayi-Hui/alphapai-notes ~/.claude/skills/alphapai-notes
+
+# Windows (PowerShell)
+git clone https://github.com/Jiayi-Hui/alphapai-notes "$env:USERPROFILE\.claude\skillslphapai-notes"
+```
+
+Already keeping the repo somewhere else? Link it instead of copying, so there
+is only ever one version:
+
+```bash
+# macOS / Linux
+ln -s /path/to/alphapai-notes ~/.claude/skills/alphapai-notes
+
+# Windows - a junction needs no admin rights
+cmd /c mklink /J "%USERPROFILE%\.claude\skillslphapai-notes" "C:\path	olphapai-notes"
+```
+
+Then **start a new session** — the skill list is read at startup, so a
+freshly installed skill will not appear in the one already running. Confirm
+with: 「你能用 alphapai 做什么」 — the agent should describe capturing notes
+and boards, not ask for an API key.
+
 ## Setup
 
-Once, before anything works:
+Once the skill is installed:
 
 On a new machine, the easiest route is to say so:
 
